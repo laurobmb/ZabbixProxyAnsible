@@ -1,0 +1,59 @@
+---
+ - hosts: zabbixP
+   port: 22
+   vars:
+    zabserver: 172.25.250.254
+    mysqldb: zabbix_proxy_01
+    mysqluser: zabbix_proxy_01
+    mysqlpass: 1q2w3e@@1q2w  
+    pacotes_zabbix:
+     - "zabbix-agent"
+     - "zabbix-release"
+     - "zabbix-proxy-mysql"
+     - "zabbix-get"
+     - "mariadb"
+     - "mariadb-libs"
+     - "mariadb-server"
+     - "zabbix-sender"
+    pacotes_adicionais:
+     - "aide"
+     - "rsyslog"
+     - "openssh-server"
+     - "audit"
+     - "policycoreutils-python"
+     - "htop"
+     - "net-tools"
+     - "bash-completion"
+     - "bind-utils"
+     - "vim"
+     - "MySQL-python"
+     - "libsemanage-python"
+     - "git"
+    servicos:
+     - "zabbix-proxy"
+     - "zabbix-agent"
+     - "mariadb"
+
+   tasks:
+   - yum: name=https://repo.zabbix.com/zabbix/4.0/rhel/7/x86_64/zabbix-release-4.0-1.el7.noarch.rpm state=present
+   - yum: name={{pacotes_zabbix}} state=present
+   - yum: name=epel-release state=present
+   - yum: name={{pacotes_adicionais}} state=present
+   - yum: name="*" state=latest
+   - systemd: state=started daemon_reload=yes enabled=yes name=mariadb
+   - seboolean: name=httpd_can_connect_zabbix state=yes persistent=yes
+   - seboolean: name=zabbix_can_network state=yes persistent=yes
+
+   - template: src=./files/zabbix_agentd.conf.j2 dest=/etc/zabbix/zabbix_agentd.conf
+   - template: src=./files/zabbix_proxy.conf.j2 dest=/etc/zabbix/zabbix_proxy.conf
+   - copy: src=./files/my.cnf.j2 dest=/etc/my.cnf
+
+   - mysql_db: name="{{mysqldb}}" state=present
+     register: result
+   - mysql_user: name="{{mysqluser}}" password="{{mysqlpass}}" priv='*.*:ALL,GRANT' state=present
+   - mysql_db: name="{{mysqldb}}" state=import target=/usr/share/doc/zabbix-proxy-mysql-4.0.2/schema.sql.gz
+     when: result is changed
+   - systemd: state=stopped enabled=no name=firewalld
+   - systemd: state=started daemon_reload=yes enabled=yes name={{item}}
+     with_items: "{{servicos}}"
+
